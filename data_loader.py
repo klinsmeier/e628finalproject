@@ -195,7 +195,7 @@ def filter_listings(
         df = df[df["room_type"] == room_type]
     if property_type and property_type != "All":
         df = df[df["property_type_grouped"] == property_type]
-    df = df[df["accommodates"] == accommodates]
+    df = df[df["accommodates"] >= accommodates]
     df = df[df["minimum_nights_capped"] <= min_nights]
     return df
 def compute_neighbourhood_stats(df: pd.DataFrame) -> dict:

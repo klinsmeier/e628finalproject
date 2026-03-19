@@ -56,7 +56,7 @@ sidebar = html.Div(id="sidebar", children=[
         clearable=False,
         style={"fontSize": "13px"},
     ),
-    html.Span("Accommodates", className="filter-label"),
+    html.Span("Accommodates (at least)", className="filter-label"),
     dcc.Slider(
         id="sl-accommodates",
         min=1, max=16, step=1, value=2,
