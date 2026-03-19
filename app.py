@@ -124,14 +124,14 @@ def _build_eda_figures(lst: pd.DataFrame):
         title="Superhost pricing premium by room type",
         labels={"room_type": "", "median_price": "Median price (€)"},
     )
-    fig_sh.update_layout(**PLOTLY_TEMPLATE["layout"], height=360,
-                         margin=dict(l=10, r=10, t=75, b=10),
-                         yaxis=dict(tickprefix="€", gridcolor="#F0F0F0"),
-                         xaxis=dict(showgrid=False),
-                         legend=dict(
+    fig_sh.update_layout(**{**PLOTLY_TEMPLATE["layout"], "height": 360,
+                         "margin": dict(l=10, r=10, t=75, b=10),
+                         "yaxis": dict(tickprefix="€", gridcolor="#F0F0F0"),
+                         "xaxis": dict(showgrid=False),
+                         "legend": dict(
                              orientation="h", y=1.18, x=0,
                              title=dict(text="Host type  ", font=dict(size=12)),
-                         ))
+                         )})
 
     # 5  Amenity count vs price scatter (sample)
     samp = lst[lst["price"] <= 600].sample(min(1500, len(lst)), random_state=123)
@@ -143,14 +143,14 @@ def _build_eda_figures(lst: pd.DataFrame):
         labels={"amenity_count": "Number of amenities", "price": "Price (€)",
                 "room_type": "Room type"},
     )
-    fig_am.update_layout(**PLOTLY_TEMPLATE["layout"], height=360,
-                         margin=dict(l=10, r=10, t=75, b=10),
-                         yaxis=dict(tickprefix="€", gridcolor="#F0F0F0"),
-                         xaxis=dict(showgrid=False),
-                         legend=dict(
+    fig_am.update_layout(**{**PLOTLY_TEMPLATE["layout"], "height": 360,
+                         "margin": dict(l=10, r=10, t=75, b=10),
+                         "yaxis": dict(tickprefix="€", gridcolor="#F0F0F0"),
+                         "xaxis": dict(showgrid=False),
+                         "legend": dict(
                              orientation="h", y=1.18, x=0,
                              title=dict(text="Room type  ", font=dict(size=12)),
-                         ))
+                         )})
 
     # 6  Review-score rating distribution
     rated = lst.dropna(subset=["review_scores_rating"])
