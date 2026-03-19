@@ -7,7 +7,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import FunctionTransformer
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 import lightgbm as lgb
 
 def _cast_to_str(X):
@@ -23,22 +23,22 @@ NUMERIC_FEATURES = [
     "accommodates",
     "bedrooms",
     "beds",
-    "bathrooms_clean",
-    "amenity_count",
-    "minimum_nights_capped",
-    "host_tenure_years",
+    "bathrooms",
+    "minimum_nights",
+    "host_age_years",
+    "is_superhost",
+    "calculated_host_listings_count",
+    "number_of_reviews",
     "review_scores_rating",
     "review_scores_cleanliness",
     "review_scores_location",
-    "reviews_per_month",
-    "calculated_host_listings_count",
+    "review_scores_value",
     "availability_365",
 ]
 CATEGORICAL_FEATURES = [
-    "neighbourhood_cleansed",
     "room_type",
     "property_type_grouped",
-    "host_is_superhost",
+    "neighbourhood_cleansed",
     "instant_bookable",
 ]
 TARGET = "price"
@@ -76,18 +76,22 @@ def get_model(listings_hash: int):
     all_features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
     df = listings[all_features + [TARGET]].dropna(subset=[TARGET])
     X = df[all_features]
-    y = df[TARGET]
+    y = np.log1p(df[TARGET])   # train on log-price, matching notebook
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=SEED
     )
     pipe = _build_pipeline()
     pipe.fit(X_train, y_train)
-    y_pred = pipe.predict(X_test)
+    y_pred_log = pipe.predict(X_test)
+    # Evaluate in euros (reverse log transform) — matches notebook evaluation
+    y_pred_euros = np.expm1(y_pred_log)
+    y_test_euros = np.expm1(y_test.values)
     metrics = {
-        "r2":  round(r2_score(y_test, y_pred), 3),
-        "mae": round(mean_absolute_error(y_test, y_pred), 2),
+        "r2":   round(r2_score(y_test_euros, y_pred_euros), 3),
+        "mae":  round(mean_absolute_error(y_test_euros, y_pred_euros), 2),
+        "rmse": round(float(np.sqrt(mean_squared_error(y_test_euros, y_pred_euros))), 2),
     }
-    print(f"LightGBM  R²={metrics['r2']}  MAE=€{metrics['mae']}")
+    print(f"LightGBM  R²={metrics['r2']}  MAE=€{metrics['mae']}  RMSE=€{metrics['rmse']}")
     return pipe, metrics
 @lru_cache(maxsize=1)
 def get_feature_importances(listings_hash: int) -> pd.DataFrame:
@@ -108,16 +112,16 @@ def get_feature_importances(listings_hash: int) -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def get_test_predictions(listings_hash: int):
-    """Returns (y_test, y_pred) arrays for model evaluation charts."""
+    """Returns (y_test_euros, y_pred_euros) arrays for model evaluation charts."""
     pipe, _ = get_model(listings_hash)
     from data_loader import get_data
     listings = get_data()
     all_features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
     df = listings[all_features + [TARGET]].dropna(subset=[TARGET])
-    X, y = df[all_features], df[TARGET]
+    X, y = df[all_features], np.log1p(df[TARGET])
     _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED)
-    y_pred = pipe.predict(X_test)
-    return y_test.values, y_pred
+    y_pred_log = pipe.predict(X_test)
+    return np.expm1(y_test.values), np.expm1(y_pred_log)
 
 
 def predict_price(
@@ -131,16 +135,15 @@ def predict_price(
 ) -> float | None:
     medians = listings[NUMERIC_FEATURES].median()
     row = {f: medians[f] for f in NUMERIC_FEATURES}
-    row["accommodates"]          = accommodates
-    row["minimum_nights_capped"] = min(min_nights, 30)
+    row["accommodates"]    = accommodates
+    row["minimum_nights"]  = min(min_nights, 30)
     row["neighbourhood_cleansed"] = neighbourhood
     row["room_type"]              = room_type
     row["property_type_grouped"]  = property_type
-    row["host_is_superhost"]      = True
     row["instant_bookable"]       = False
     X = pd.DataFrame([row])
     try:
-        pred = pipeline.predict(X)[0]
-        return round(float(max(pred, 10)), 2)
+        pred_log = pipeline.predict(X)[0]
+        return round(float(max(np.expm1(pred_log), 10)), 2)
     except Exception:
         return None

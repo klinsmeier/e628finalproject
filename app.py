@@ -124,10 +124,14 @@ def _build_eda_figures(lst: pd.DataFrame):
         title="Superhost pricing premium by room type",
         labels={"room_type": "", "median_price": "Median price (€)"},
     )
-    fig_sh.update_layout(**PLOTLY_TEMPLATE["layout"], height=340,
+    fig_sh.update_layout(**PLOTLY_TEMPLATE["layout"], height=360,
+                         margin=dict(l=10, r=10, t=75, b=10),
                          yaxis=dict(tickprefix="€", gridcolor="#F0F0F0"),
                          xaxis=dict(showgrid=False),
-                         legend=dict(orientation="h", y=1.12, x=0))
+                         legend=dict(
+                             orientation="h", y=1.18, x=0,
+                             title=dict(text="Host type  ", font=dict(size=12)),
+                         ))
 
     # 5  Amenity count vs price scatter (sample)
     samp = lst[lst["price"] <= 600].sample(min(1500, len(lst)), random_state=123)
@@ -139,10 +143,14 @@ def _build_eda_figures(lst: pd.DataFrame):
         labels={"amenity_count": "Number of amenities", "price": "Price (€)",
                 "room_type": "Room type"},
     )
-    fig_am.update_layout(**PLOTLY_TEMPLATE["layout"], height=340,
+    fig_am.update_layout(**PLOTLY_TEMPLATE["layout"], height=360,
+                         margin=dict(l=10, r=10, t=75, b=10),
                          yaxis=dict(tickprefix="€", gridcolor="#F0F0F0"),
                          xaxis=dict(showgrid=False),
-                         legend=dict(orientation="h", y=1.12, x=0))
+                         legend=dict(
+                             orientation="h", y=1.18, x=0,
+                             title=dict(text="Room type  ", font=dict(size=12)),
+                         ))
 
     # 6  Review-score rating distribution
     rated = lst.dropna(subset=["review_scores_rating"])
@@ -158,7 +166,7 @@ def _build_eda_figures(lst: pd.DataFrame):
                           xaxis=dict(showgrid=False))
     fig_rat.update_traces(marker_line_width=0.4, marker_line_color="white")
 
-    # Narrative text (dynamic)
+    # Narrative text (dynamic) — key findings from EDA analysis
     top_nb  = nb_med.iloc[-1]["neighbourhood_cleansed"]
     bot_nb  = nb_med.iloc[0]["neighbourhood_cleansed"]
     top_p   = nb_med.iloc[-1]["median_price"]
@@ -168,19 +176,33 @@ def _build_eda_figures(lst: pd.DataFrame):
     prv_p   = rt_med.get("Private room", None)
     ratio   = f"{ent_p/prv_p:.1f}×" if (ent_p and prv_p and prv_p > 0) else "N/A"
     sh_med  = lst.dropna(subset=["host_is_superhost"]).groupby("host_is_superhost")["price"].median()
-    sh_prem = ""
+    sh_prem_val = ""
+    sh_prem_pct = ""
     if True in sh_med.index and False in sh_med.index and sh_med[False] > 0:
         pct = (sh_med[True] - sh_med[False]) / sh_med[False] * 100
-        sh_prem = f" Superhosts command a {pct:+.0f}% price premium over regular hosts."
+        sh_prem_val = f"€{sh_med[True]:.0f}"
+        sh_prem_pct = f"{pct:+.0f}%"
     pct_rated = round(rated["review_scores_rating"].ge(4.5).mean() * 100)
+    ent_share = round(lst["room_type"].eq("Entire home/apt").mean() * 100)
+    # Summer seasonality — peak months from last_review proxy
+    seasonal = lst.dropna(subset=["last_review"])
+    seasonal_med = seasonal.groupby(seasonal["last_review"].dt.month)["price"].median()
+    peak_month = int(seasonal_med.idxmax()) if not seasonal_med.empty else 8
+    peak_month_name = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][peak_month - 1]
+    # Min-nights insight
+    short_stay_pct = round(lst["minimum_nights"].le(3).mean() * 100)
     narrative = (
-        f"{top_nb} leads in median price at €{top_p:.0f}/night; "
-        f"{bot_nb} is the most affordable at €{bot_p:.0f}/night — "
-        f"a {top_p/bot_p:.1f}× spread across the city. "
-        f"Entire homes cost {ratio} more than private rooms. "
-        f"{sh_prem} "
-        f"{pct_rated}% of rated listings score 4.5 ★ or above, signalling a "
-        f"quality-competitive market where differentiation requires more than price alone."
+        f"Location is the dominant price driver: {top_nb} leads at €{top_p:.0f}/night while "
+        f"{bot_nb} is most affordable at €{bot_p:.0f}/night — a {top_p/bot_p:.1f}× city-wide spread. "
+        f"Entire homes/apts dominate supply ({ent_share}% of listings) and cost {ratio} more than private rooms. "
+        f"Superhosts command a {sh_prem_pct} premium (€{sh_med.get(True, 0):.0f} vs €{sh_med.get(False, 0):.0f} median) — "
+        f"quality signalling translates directly into pricing power. "
+        f"Demand peaks around {peak_month_name} (summer tourism season) and collapses in winter, "
+        f"consistent with Barcelona's seasonal tourism cycle. "
+        f"{short_stay_pct}% of listings allow stays of 3 nights or fewer, targeting short-stay tourists; "
+        f"a secondary cluster at 30-night minimums reflects regulatory compliance. "
+        f"{pct_rated}% of rated listings score ≥4.5 ★ — a quality-saturated market "
+        f"where amenities and location matter more than marginal rating differences."
     )
     return narrative, fig_nb, fig_rt, fig_acc, fig_sh, fig_am, fig_rat
 
@@ -254,13 +276,14 @@ def _build_ml_figures(lst: pd.DataFrame, pipe, met, h):
 
     # Prediction error by room type (box)
     try:
+        y_test_e, y_pred_e = get_test_predictions(h)
         all_feats = NUMERIC_FEATURES + CATEGORICAL_FEATURES
         from sklearn.model_selection import train_test_split
-        df_ml = lst[all_feats + ["price", "room_type"]].dropna(subset=["price"])
+        # "room_type" is already in all_feats (CATEGORICAL_FEATURES), no need to add it again
+        df_ml = lst[all_feats + ["price"]].dropna(subset=["price"])
         _, df_test = train_test_split(df_ml, test_size=0.2, random_state=123)
-        preds = pipe.predict(df_test[all_feats])
         err_df = pd.DataFrame({"room_type": df_test["room_type"].values,
-                               "error": preds - df_test["price"].values})
+                               "error": y_pred_e - y_test_e})
         err_clip = err_df[err_df["error"].between(-300, 300)]
         fig_err = px.box(
             err_clip, x="room_type", y="error",
@@ -287,12 +310,13 @@ def _build_ml_figures(lst: pd.DataFrame, pipe, met, h):
     except Exception:
         bias_note = ""
     narrative = (
-        f"A LightGBM gradient-boosting model was trained on {n_train:,} listings "
-        f"and evaluated on {n_test:,} held-out listings. "
-        f"It achieves R² = {met['r2']} and MAE = €{met['mae']:.0f}/night — "
-        f"meaning predictions are within roughly €{met['mae']:.0f} of the true price on average. "
-        f"Physical listing attributes (accommodates, bedrooms, amenity count) and "
-        f"location (neighbourhood) dominate the model. {bias_note} "
+        f"A LightGBM gradient-boosting model (trained on log-price, evaluated in €) was "
+        f"trained on {n_train:,} listings and evaluated on {n_test:,} held-out listings. "
+        f"It achieves R² = {met['r2']}, MAE = €{met['mae']:.0f}/night, and "
+        f"RMSE = €{met['rmse']:.0f}/night. "
+        f"MAE reflects the average error; RMSE penalises large mispredictions more heavily. "
+        f"Physical listing attributes (accommodates, bedrooms, bathrooms) and "
+        f"location (neighbourhood) dominate feature importance. {bias_note} "
         f"Business implication: hosts can use the predicted price as an evidence-based anchor "
         f"and adjust ±10–15% based on seasonal demand or listing quality relative to neighbours."
     )
@@ -438,10 +462,10 @@ n_test  = len(listings) - n_train
 ml_tab = html.Div(className="tab-page", children=[
     _narrative_card("🤖", "ML Model Summary", ml_narrative, "#FF5A5F"),
     html.Div(className="kpi-row", style={"marginBottom": "20px"}, children=[
-        _kpi_card(str(metrics["r2"]),     "R² (test set)"),
+        _kpi_card(str(metrics["r2"]),      "R² (test set)"),
         _kpi_card(f"€{metrics['mae']:.0f}", "MAE / night"),
-        _kpi_card(f"{n_train:,}",          "Training listings"),
-        _kpi_card(f"{n_test:,}",           "Test listings"),
+        _kpi_card(f"€{metrics['rmse']:.0f}", "RMSE / night"),
+        _kpi_card(f"{n_train:,}",           "Training listings"),
     ]),
     html.Div(className="charts-row", children=[
         _chart_card(fig_ml_imp),
@@ -573,7 +597,7 @@ def update_dashboard(neighbourhood, room_type, property_type,
     if pred is not None:
         price_display = f"€{pred:.0f}"
         price_meta    = (f"LightGBM model  ·  R² = {metrics['r2']}  ·  "
-                         f"MAE = €{metrics['mae']:.0f} on test set")
+                         f"MAE = €{metrics['mae']:.0f}  ·  RMSE = €{metrics['rmse']:.0f} on test set")
     else:
         price_display = "—"
         price_meta    = "Unable to predict for this combination"

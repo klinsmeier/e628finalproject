@@ -52,6 +52,8 @@ def _generate_synthetic_listings(n: int = 5000) -> pd.DataFrame:
     rating = np.where(n_reviews > 0, np.clip(rng.normal(4.6, 0.3, n), 1, 5).round(2), np.nan)
     clean = np.where(n_reviews > 0, np.clip(rng.normal(4.6, 0.3, n), 1, 5).round(2), np.nan)
     loc   = np.where(n_reviews > 0, np.clip(rng.normal(4.7, 0.25, n), 1, 5).round(2), np.nan)
+    value = np.where(n_reviews > 0, np.clip(rng.normal(4.5, 0.35, n), 1, 5).round(2), np.nan)
+    bathrooms_num = np.clip(rng.integers(1, 4, n).astype(float), 1, None)
     host_since_days = rng.integers(365, 365*12, n)
     host_since = pd.to_datetime("2025-09-14") - pd.to_timedelta(host_since_days, unit="D")
     last_review_days = rng.integers(0, 730, n)
@@ -91,6 +93,8 @@ def _generate_synthetic_listings(n: int = 5000) -> pd.DataFrame:
         "review_scores_rating": rating,
         "review_scores_cleanliness": clean,
         "review_scores_location": loc,
+        "review_scores_value": value,
+        "bathrooms": bathrooms_num,
         "instant_bookable": instant,
     })
     print(f"{len(df):,} rows x {df.shape[1]} cols (synthetic)")
@@ -137,11 +141,22 @@ def _add_features(df):
     df["host_tenure_years"] = (
         (pd.Timestamp("2025-09-14") - df["host_since"]).dt.days / 365.25
     )
+    df["host_age_years"] = df["host_tenure_years"]
     df["last_review"] = pd.to_datetime(df["last_review"], errors="coerce")
     df["review_month"] = df["last_review"].dt.to_period("M")
     df["beds"] = df["beds"].fillna(1)
     df["bedrooms"] = df["bedrooms"].fillna(1)
     df["minimum_nights_capped"] = df["minimum_nights"].clip(upper=30)
+    # Ensure a numeric bathrooms column exists (real data has it; synthetic uses bathrooms_clean)
+    if "bathrooms" not in df.columns or df["bathrooms"].dtype == object:
+        df["bathrooms"] = df["bathrooms_clean"]
+    else:
+        df["bathrooms"] = pd.to_numeric(df["bathrooms"], errors="coerce").fillna(df["bathrooms_clean"])
+    # Numeric is_superhost (0/1) matching notebook feature engineering
+    df["is_superhost"] = df["host_is_superhost"].fillna(False).astype(int)
+    # Ensure review_scores_value is numeric
+    if "review_scores_value" in df.columns:
+        df["review_scores_value"] = pd.to_numeric(df["review_scores_value"], errors="coerce")
     top_props = df["property_type"].value_counts().head(15).index
     df["property_type_grouped"] = df["property_type"].where(
         df["property_type"].isin(top_props), other="Other"
