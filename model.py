@@ -89,6 +89,37 @@ def get_model(listings_hash: int):
     }
     print(f"LightGBM  R²={metrics['r2']}  MAE=€{metrics['mae']}")
     return pipe, metrics
+@lru_cache(maxsize=1)
+def get_feature_importances(listings_hash: int) -> pd.DataFrame:
+    """Top features from the fitted LightGBM model."""
+    pipe, _ = get_model(listings_hash)
+    preprocessor = pipe.named_steps["preprocessor"]
+    cat_transformer = preprocessor.named_transformers_["cat"]
+    ohe = cat_transformer.named_steps["onehot"]
+    cat_names = list(ohe.get_feature_names_out(CATEGORICAL_FEATURES))
+    all_names = NUMERIC_FEATURES + cat_names
+    importances = pipe.named_steps["model"].feature_importances_
+    return (
+        pd.DataFrame({"feature": all_names, "importance": importances})
+        .sort_values("importance", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+@lru_cache(maxsize=1)
+def get_test_predictions(listings_hash: int):
+    """Returns (y_test, y_pred) arrays for model evaluation charts."""
+    pipe, _ = get_model(listings_hash)
+    from data_loader import get_data
+    listings = get_data()
+    all_features = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    df = listings[all_features + [TARGET]].dropna(subset=[TARGET])
+    X, y = df[all_features], df[TARGET]
+    _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=SEED)
+    y_pred = pipe.predict(X_test)
+    return y_test.values, y_pred
+
+
 def predict_price(
     pipeline,
     neighbourhood: str,
