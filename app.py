@@ -91,8 +91,7 @@ def _build_eda_figures(lst: pd.DataFrame):
     fig_rt.update_traces(textposition="outside", textinfo="percent+label",
                          pull=[0.04] + [0] * (len(rt_counts) - 1))
     fig_rt.update_layout(**PLOTLY_TEMPLATE["layout"], height=360,
-                         showlegend=False,
-                         margin=dict(l=10, r=10, t=40, b=30))
+                         showlegend=False)
 
     # 3  Price vs accommodates (box)
     acc_df = lst[lst["accommodates"].between(1, 10)].copy()
