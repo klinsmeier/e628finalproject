@@ -66,7 +66,7 @@ sidebar = html.Div(id="sidebar", children=[
     html.Span("Minimum Nights (max)", className="filter-label"),
     dcc.Slider(
         id="sl-min-nights",
-        min=1, max=30, step=1, value=5,
+        min=1, max=30, step=1, value=30,
         marks={i: str(i) for i in [1, 5, 10, 20, 30]},
         tooltip={"placement": "bottom", "always_visible": False},
     ),
