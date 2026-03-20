@@ -138,7 +138,7 @@ def _build_eda_figures(lst: pd.DataFrame):
     fig_am = px.scatter(
         samp, x="amenity_count", y="price",
         color="room_type", color_discrete_sequence=AIRBNB_PALETTE,
-        opacity=0.45, trendline="ols",
+        opacity=0.45,
         title="Amenity count vs nightly price",
         labels={"amenity_count": "Number of amenities", "price": "Price (€)",
                 "room_type": "Room type"},
@@ -325,13 +325,17 @@ def _build_ml_figures(lst: pd.DataFrame, pipe, met, h):
 
 # ─── compute everything at startup ──────────────────────────────────────────
 
+print("Building EDA figures...")
 (eda_narrative,
  fig_eda_nb, fig_eda_rt, fig_eda_acc,
  fig_eda_sh, fig_eda_am, fig_eda_rat) = _build_eda_figures(listings)
+print("EDA figures done.")
 
+print("Building ML figures...")
 (ml_narrative,
  fig_ml_imp, fig_ml_ap,
  fig_ml_resid, fig_ml_err) = _build_ml_figures(listings, pipeline, metrics, _hash)
+print("ML figures done. Dashboard ready.")
 
 
 # ─── layout helpers ──────────────────────────────────────────────────────────
