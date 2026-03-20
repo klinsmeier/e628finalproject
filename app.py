@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, html, dcc, Input, Output, callback
+from dash.exceptions import PreventUpdate
 
 app = Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
@@ -325,17 +326,7 @@ def _build_ml_figures(lst: pd.DataFrame, pipe, met, h):
 
 # ─── compute everything at startup ──────────────────────────────────────────
 
-print("Building EDA figures...")
-(eda_narrative,
- fig_eda_nb, fig_eda_rt, fig_eda_acc,
- fig_eda_sh, fig_eda_am, fig_eda_rat) = _build_eda_figures(listings)
-print("EDA figures done.")
-
-print("Building ML figures...")
-(ml_narrative,
- fig_ml_imp, fig_ml_ap,
- fig_ml_resid, fig_ml_err) = _build_ml_figures(listings, pipeline, metrics, _hash)
-print("ML figures done. Dashboard ready.")
+print("Startup complete — figures will build on first tab visit.")
 
 
 # ─── layout helpers ──────────────────────────────────────────────────────────
@@ -446,38 +437,42 @@ explorer_tab = html.Div(id="main-layout", children=[
 ])
 
 eda_tab = html.Div(className="tab-page", children=[
-    _narrative_card("📈", "EDA Key Findings", eda_narrative, "#00A699"),
-    html.Div(className="charts-row", children=[
-        _chart_card(fig_eda_nb),
-        _chart_card(fig_eda_rt),
-    ]),
-    html.Div(className="charts-row", children=[
-        _chart_card(fig_eda_acc),
-        _chart_card(fig_eda_sh),
-    ]),
-    html.Div(className="charts-row", children=[
-        _chart_card(fig_eda_am),
-        _chart_card(fig_eda_rat),
+    html.Div(id="eda-narrative"),
+    dcc.Loading(type="circle", color="#FF5A5F", children=[
+        html.Div(className="charts-row", children=[
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-nb",  config={"displayModeBar": False})]),
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-rt",  config={"displayModeBar": False})]),
+        ]),
+        html.Div(className="charts-row", children=[
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-acc", config={"displayModeBar": False})]),
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-sh",  config={"displayModeBar": False})]),
+        ]),
+        html.Div(className="charts-row", children=[
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-am",  config={"displayModeBar": False})]),
+            html.Div(className="card", children=[dcc.Graph(id="eda-fig-rat", config={"displayModeBar": False})]),
+        ]),
     ]),
 ])
 
 n_train = round(len(listings) * 0.8)
 n_test  = len(listings) - n_train
 ml_tab = html.Div(className="tab-page", children=[
-    _narrative_card("🤖", "ML Model Summary", ml_narrative, "#FF5A5F"),
-    html.Div(className="kpi-row", style={"marginBottom": "20px"}, children=[
+    html.Div(id="ml-narrative"),
+    html.Div(id="ml-kpi-row", className="kpi-row", style={"marginBottom": "20px"}, children=[
         _kpi_card(str(metrics["r2"]),      "R² (test set)"),
         _kpi_card(f"€{metrics['mae']:.0f}", "MAE / night"),
         _kpi_card(f"€{metrics['rmse']:.0f}", "RMSE / night"),
         _kpi_card(f"{n_train:,}",           "Training listings"),
     ]),
-    html.Div(className="charts-row", children=[
-        _chart_card(fig_ml_imp),
-        _chart_card(fig_ml_ap),
-    ]),
-    html.Div(className="charts-row", children=[
-        _chart_card(fig_ml_resid),
-        _chart_card(fig_ml_err),
+    dcc.Loading(type="circle", color="#FF5A5F", children=[
+        html.Div(className="charts-row", children=[
+            html.Div(className="card", children=[dcc.Graph(id="ml-fig-imp",   config={"displayModeBar": False})]),
+            html.Div(className="card", children=[dcc.Graph(id="ml-fig-ap",    config={"displayModeBar": False})]),
+        ]),
+        html.Div(className="charts-row", children=[
+            html.Div(className="card", children=[dcc.Graph(id="ml-fig-resid", config={"displayModeBar": False})]),
+            html.Div(className="card", children=[dcc.Graph(id="ml-fig-err",   config={"displayModeBar": False})]),
+        ]),
     ]),
 ])
 
@@ -685,6 +680,45 @@ def update_dashboard(neighbourhood, room_type, property_type,
 
     return (insight, price_display, price_meta,
             kpi_children, fig_dist, fig_trend)
+
+
+# ─── lazy callbacks for EDA and ML tabs ─────────────────────────────────────
+
+@callback(
+    Output("eda-narrative", "children"),
+    Output("eda-fig-nb",    "figure"),
+    Output("eda-fig-rt",    "figure"),
+    Output("eda-fig-acc",   "figure"),
+    Output("eda-fig-sh",    "figure"),
+    Output("eda-fig-am",    "figure"),
+    Output("eda-fig-rat",   "figure"),
+    Input("main-tabs", "value"),
+    prevent_initial_call=True,
+)
+def build_eda_tab(tab):
+    if tab != "tab-eda":
+        raise PreventUpdate
+    narrative, fig_nb, fig_rt, fig_acc, fig_sh, fig_am, fig_rat = _build_eda_figures(listings)
+    card = _narrative_card("📈", "EDA Key Findings", narrative, "#00A699")
+    return card, fig_nb, fig_rt, fig_acc, fig_sh, fig_am, fig_rat
+
+
+@callback(
+    Output("ml-narrative",  "children"),
+    Output("ml-fig-imp",    "figure"),
+    Output("ml-fig-ap",     "figure"),
+    Output("ml-fig-resid",  "figure"),
+    Output("ml-fig-err",    "figure"),
+    Input("main-tabs", "value"),
+    prevent_initial_call=True,
+)
+def build_ml_tab(tab):
+    if tab != "tab-ml":
+        raise PreventUpdate
+    narrative, fig_imp, fig_ap, fig_resid, fig_err = _build_ml_figures(
+        listings, pipeline, metrics, _hash)
+    card = _narrative_card("🤖", "ML Model Summary", narrative, "#FF5A5F")
+    return card, fig_imp, fig_ap, fig_resid, fig_err
 
 
 if __name__ == "__main__":
