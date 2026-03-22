@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -30,11 +31,30 @@ from data_loader import get_data, get_filter_options, filter_listings, compute_n
 from model import (get_model, predict_price, get_feature_importances,
                    get_test_predictions, NUMERIC_FEATURES, CATEGORICAL_FEATURES)
 
-listings = get_data()
-options  = get_filter_options(listings)
-_hash    = hash((len(listings), tuple(listings.columns.tolist())))
-pipeline, metrics = get_model(_hash)
+listings    = get_data()
+options     = get_filter_options(listings)
+_hash       = hash((len(listings), tuple(listings.columns.tolist())))
 CITY_MEDIAN = round(listings["price"].median(), 2)
+
+# Train model in background so the port opens immediately
+pipeline     = None
+metrics      = None
+_model_ready = threading.Event()
+
+def _train_model():
+    global pipeline, metrics
+    try:
+        pipe, met = get_model(_hash)
+        pipeline = pipe
+        metrics  = met
+        print(f"Model ready: R²={met['r2']}  MAE=€{met['mae']}  RMSE=€{met['rmse']}")
+    except Exception as e:
+        print(f"Model training failed: {e}")
+    finally:
+        _model_ready.set()
+
+threading.Thread(target=_train_model, daemon=True).start()
+print("App ready — model training in background.")
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -454,16 +474,9 @@ eda_tab = html.Div(className="tab-page", children=[
     ]),
 ])
 
-n_train = round(len(listings) * 0.8)
-n_test  = len(listings) - n_train
 ml_tab = html.Div(className="tab-page", children=[
     html.Div(id="ml-narrative"),
-    html.Div(id="ml-kpi-row", className="kpi-row", style={"marginBottom": "20px"}, children=[
-        _kpi_card(str(metrics["r2"]),      "R² (test set)"),
-        _kpi_card(f"€{metrics['mae']:.0f}", "MAE / night"),
-        _kpi_card(f"€{metrics['rmse']:.0f}", "RMSE / night"),
-        _kpi_card(f"{n_train:,}",           "Training listings"),
-    ]),
+    html.Div(id="ml-kpi-row", className="kpi-row", style={"marginBottom": "20px"}),
     dcc.Loading(type="circle", color="#FF5A5F", children=[
         html.Div(className="charts-row", children=[
             html.Div(className="card", children=[dcc.Graph(id="ml-fig-imp",   config={"displayModeBar": False})]),
@@ -589,17 +602,22 @@ def update_dashboard(neighbourhood, room_type, property_type,
     insight = _build_insight(df, neighbourhood, room_type, property_type,
                              accommodates, min_nights)
 
+    _model_ready.wait(timeout=180)
     nb  = neighbourhood if neighbourhood != "All" else listings["neighbourhood_cleansed"].mode()[0]
     rt  = room_type     if room_type     != "All" else "Entire home/apt"
     pt  = property_type if property_type != "All" else listings["property_type_grouped"].mode()[0]
-    pred = predict_price(pipeline, nb, rt, pt, accommodates, min_nights, listings)
-    if pred is not None:
-        price_display = f"€{pred:.0f}"
-        price_meta    = (f"LightGBM model  ·  R² = {metrics['r2']}  ·  "
-                         f"MAE = €{metrics['mae']:.0f}  ·  RMSE = €{metrics['rmse']:.0f} on test set")
+    if pipeline is not None:
+        pred = predict_price(pipeline, nb, rt, pt, accommodates, min_nights, listings)
+        if pred is not None:
+            price_display = f"€{pred:.0f}"
+            price_meta    = (f"LightGBM model  ·  R² = {metrics['r2']}  ·  "
+                             f"MAE = €{metrics['mae']:.0f}  ·  RMSE = €{metrics['rmse']:.0f} on test set")
+        else:
+            price_display = "—"
+            price_meta    = "Unable to predict for this combination"
     else:
         price_display = "—"
-        price_meta    = "Unable to predict for this combination"
+        price_meta    = "Model unavailable"
 
     stats = compute_neighbourhood_stats(df)
 
@@ -705,6 +723,7 @@ def build_eda_tab(tab):
 
 @callback(
     Output("ml-narrative",  "children"),
+    Output("ml-kpi-row",    "children"),
     Output("ml-fig-imp",    "figure"),
     Output("ml-fig-ap",     "figure"),
     Output("ml-fig-resid",  "figure"),
@@ -715,10 +734,18 @@ def build_eda_tab(tab):
 def build_ml_tab(tab):
     if tab != "tab-ml":
         raise PreventUpdate
+    _model_ready.wait(timeout=180)
     narrative, fig_imp, fig_ap, fig_resid, fig_err = _build_ml_figures(
         listings, pipeline, metrics, _hash)
     card = _narrative_card("🤖", "ML Model Summary", narrative, "#FF5A5F")
-    return card, fig_imp, fig_ap, fig_resid, fig_err
+    n_train = round(len(listings) * 0.8)
+    kpi_children = [
+        _kpi_card(str(metrics["r2"]),       "R² (test set)"),
+        _kpi_card(f"€{metrics['mae']:.0f}", "MAE / night"),
+        _kpi_card(f"€{metrics['rmse']:.0f}", "RMSE / night"),
+        _kpi_card(f"{n_train:,}",            "Training listings"),
+    ] if metrics else []
+    return card, kpi_children, fig_imp, fig_ap, fig_resid, fig_err
 
 
 if __name__ == "__main__":
