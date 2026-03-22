@@ -37,7 +37,7 @@ NUMERIC_FEATURES = [
 ]
 CATEGORICAL_FEATURES = [
     "room_type",
-    "property_type_grouped",
+    "property_type",
     "neighbourhood_cleansed",
     "instant_bookable",
 ]
@@ -64,6 +64,7 @@ def _build_pipeline() -> Pipeline:
         colsample_bytree=0.8,
         random_state=SEED,
         verbose=-1,
+        importance_type="gain",
     )
     return Pipeline([
         ("preprocessor", preprocessor),
@@ -139,7 +140,7 @@ def predict_price(
     row["minimum_nights"]  = min(min_nights, 30)
     row["neighbourhood_cleansed"] = neighbourhood
     row["room_type"]              = room_type
-    row["property_type_grouped"]  = property_type
+    row["property_type"]          = property_type
     row["instant_bookable"]       = False
     X = pd.DataFrame([row])
     try:

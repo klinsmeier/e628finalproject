@@ -215,7 +215,7 @@ def _build_ml_figures(lst: pd.DataFrame, pipe, met, h):
     try:
         imp_df = get_feature_importances(h)
         top15  = imp_df.head(15).copy()
-        top15["label"] = top15["feature"].apply(_clean_feat_name)
+        top15["label"] = top15["feature"]
         top15 = top15.sort_values("importance")
         fig_imp = px.bar(
             top15, x="importance", y="label", orientation="h",
